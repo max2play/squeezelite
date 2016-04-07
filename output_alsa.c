@@ -20,6 +20,9 @@
  * Additions (c) Paul Hermann, 2015-2016 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
+ *
+ * Additions (c) Stefan Rick (Max2Play), 2016 under the same license terms
+ *   -Syncing local ALSA-Volume changes to SBS 
  */
 
 // Output using Alsa
@@ -75,6 +78,8 @@ extern struct buffer *outputbuf;
 
 #define LOCK   mutex_lock(outputbuf->mutex)
 #define UNLOCK mutex_unlock(outputbuf->mutex)
+
+int lmsvolume;
 
 static char *ctl4device(const char *device) {
 	char *ctl = NULL;
@@ -259,11 +264,70 @@ static void set_mixer(const char *device, const char *mixer, int mixer_index, bo
 	if ((err = snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_RIGHT, &nright)) < 0) {
 		LOG_ERROR("error getting right vol: %s", snd_strerror(err));
 	}
-
+#if ALSASYNC
+	lmsvolume = nleft;
+#endif	
 	LOG_DEBUG("%s left: %3.1fdB -> %ld right: %3.1fdB -> %ld", mixer, ldB, nleft, rdB, nright);
 
 	snd_mixer_close(handle);
 }
+
+#if ALSASYNC
+long get_mixer(const char *device, const char *mixer, int mixer_index) {
+	int err;
+	long nleft;
+	snd_mixer_t *handle;
+	snd_mixer_selem_id_t *sid;
+	snd_mixer_elem_t* elem;
+
+	if ((err = snd_mixer_open(&handle, 0)) < 0) {
+		LOG_ERROR("open error: %s", snd_strerror(err));
+		return 0;
+	}
+	if ((err = snd_mixer_attach(handle, device)) < 0) {
+		LOG_ERROR("attach error: %s", snd_strerror(err));
+		snd_mixer_close(handle);
+		return 0;
+	}
+	if ((err = snd_mixer_selem_register(handle, NULL, NULL)) < 0) {
+		LOG_ERROR("register error: %s", snd_strerror(err));
+		snd_mixer_close(handle);
+		return 0;
+	}
+	if ((err = snd_mixer_load(handle)) < 0) {
+		LOG_ERROR("load error: %s", snd_strerror(err));
+		snd_mixer_close(handle);
+		return 0;
+	}
+	
+	snd_mixer_selem_id_alloca(&sid);
+
+	snd_mixer_selem_id_set_index(sid, mixer_index);
+	snd_mixer_selem_id_set_name(sid, mixer);
+
+	if ((elem = snd_mixer_find_selem(handle, sid)) == NULL) {
+		LOG_ERROR("error find selem %s", mixer);
+		snd_mixer_close(handle);
+		return 0;
+	}
+
+	if ((err = snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &nleft)) < 0) {
+		LOG_ERROR("error getting left vol: %s", snd_strerror(err));
+	}	
+
+	snd_mixer_close(handle);
+	return nleft;
+}
+int get_changed_volume(){
+	if (!alsa.volume_mixer_name)
+		return -1;
+	int alsavolume = get_mixer(alsa.ctl, alsa.volume_mixer_name, alsa.volume_mixer_index);
+	if(alsavolume != lmsvolume) 
+		return (alsavolume - 100);
+	else
+		return -1; 	 
+}
+#endif
 
 void set_volume(unsigned left, unsigned right) {
 	float ldB, rdB;

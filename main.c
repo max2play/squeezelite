@@ -20,6 +20,11 @@
  * Additions (c) Paul Hermann, 2015-2016 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
+ *
+ * Additions (c) Stefan Rick (Max2Play), 2016 under the same license terms
+ *   -Syncing local ALSA-Volume changes to Squeezebox Server
+ *   -Set Power-Status by Bluetooth Connection status
+ *   -Added control_sbs.c for connection to CLI of Squeezebox Server
  */
 
 #include "squeezelite.h"
@@ -114,6 +119,15 @@ static void usage(const char *argv0) {
 		   "  -U <control>\t\tUnmute ALSA control and set to full volume (not supported with -V)\n"
 		   "  -V <control>\t\tUse ALSA control for volume adjustment, otherwise use software volume adjustment\n"
 #endif
+#if ALSASYNC
+		   "  -Q \t\t\tSync local ALSA volume changes with Squeezebox Server Volume when using -V option\n"
+#endif
+#if BLUETOOTHSYNC
+		   "  -B \t\t\tUse to set PowerOn/Off Player on status of connected Bluetooth-Speakers (only for Pulse Audiooutput)\n"		   
+#endif
+#if CONTROLSBS
+		   "  -I <port>\t\t Squeezebox Server CLI Port (optional). Default 9090\n"
+#endif
 #if LINUX || FREEBSD || SUN
 		   "  -z \t\t\tDaemonize\n"
 #endif
@@ -184,6 +198,15 @@ static void usage(const char *argv0) {
 #endif
 #if LINKALL
 		   " LINKALL"
+#endif
+#if CONTROLSBS
+		   " CONTROLSBS"
+#endif
+#if ALSASYNC
+		   " ALSASYNC"
+#endif
+#if BLUETOOTHSYNC
+		   " BLUETOOTHSYNC"
 #endif
 		   "\n\n",
 		   argv0);
@@ -291,6 +314,9 @@ int main(int argc, char **argv) {
 #if ALSA
 				   "UV"
 #endif
+#if CONTROLSBS
+			  		   	  "I"
+#endif
 /* 
  * only allow '-Z <rate>' override of maxSampleRate 
  * reported by client if built with the capability to resample!
@@ -304,6 +330,12 @@ int main(int argc, char **argv) {
 		} else if (strstr("ltz?W"
 #if ALSA
 						  "L"
+#endif
+#if ALSASYNC
+			  		   	  "Q"
+#endif
+#if BLUETOOTHSYNC
+				   		  "B"
 #endif
 #if RESAMPLE
 						  "uR"
@@ -517,6 +549,21 @@ int main(int argc, char **argv) {
 				exit(1);
 			}
 			output_mixer = optarg;
+			break;
+#endif
+#if ALSASYNC
+		case 'Q':			
+			alsasync = true;
+			break;		
+#endif	
+#if CONTROLSBS
+		case 'I':
+			sbscliport = atoi(optarg);			
+			break;
+#endif
+#if BLUETOOTHSYNC
+		case 'B':			
+			bluetoothsync = true;
 			break;
 #endif
 #if IR

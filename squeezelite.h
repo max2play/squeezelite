@@ -20,9 +20,14 @@
  * Additions (c) Paul Hermann, 2015-2016 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
+ *
+ * Additions (c) Stefan Rick (Max2Play), 2016 under the same license terms
+ *   -Syncing local ALSA-Volume changes to Squeezebox Server
+ *   -Set Power-Status by Bluetooth Connection status
+ *   -Added control_sbs.c for connection to CLI of Squeezebox Server
  */
 
-// make may define: PORTAUDIO, SELFPIPE, RESAMPLE, RESAMPLE_MP, VISEXPORT, GPIO, IR, DSD, LINKALL to influence build
+// make may define: PORTAUDIO, SELFPIPE, RESAMPLE, RESAMPLE_MP, VISEXPORT, GPIO, IR, DSD, LINKALL, CONTROLSBS, ALSASYNC, BLUETOOTHSYNC to influence build
 
 #define VERSION "v1.8.4-726"
 
@@ -622,6 +627,19 @@ void output_flush(void);
 frames_t _output_frames(frames_t avail);
 void _checkfade(bool);
 
+// control_sbs.c
+#if CONTROLSBS
+u8_t pmac[6];
+int sbscliport;
+void sendCLICommandPower(int setpower, in_addr_t slimproto_ip);
+void sendCLICommandVolume(int localvol, in_addr_t slimproto_ip);
+#endif
+
+#if BLUETOOTHSYNC
+int powerstatus;
+bool bluetoothsync;
+#endif
+
 // output_alsa.c
 #if ALSA
 void list_devices(void);
@@ -631,6 +649,10 @@ bool test_open(const char *device, unsigned rates[]);
 void output_init_alsa(log_level level, const char *device, unsigned output_buf_size, char *params, unsigned rates[], 
 					  unsigned rate_delay, unsigned rt_priority, unsigned idle, char *volume_mixer, bool mixer_unmute);
 void output_close_alsa(void);
+#if ALSASYNC
+bool alsasync;
+int get_changed_volume();
+#endif
 #endif
 
 // output_pa.c

@@ -20,6 +20,12 @@
  * Additions (c) Paul Hermann, 2015-2016 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
+ *
+ * Additions (c) Stefan Rick (Max2Play), 2016 under the same license terms
+ *   -Syncing local ALSA-Volume changes to Squeezebox Server
+ *   -Set Power-Status by Bluetooth Connection status
+ *   -Added control_sbs.c for connection to CLI of Squeezebox Server
+ 
  */
 
 #include "squeezelite.h"
@@ -245,6 +251,51 @@ static void sendSETDName(const char *name) {
 	send_packet((u8_t *)name, strlen(name) + 1);
 }
 
+#if ALSASYNC
+// Get current Alsa Volume Level and compare with current squeezelite volume level
+// Update SBS volume level by new Alsa Value if needed - Use SBS-CLI
+// read port for CLI on SBS manually from squeezelite startup as parameter
+// only connect to ALSA-volume if -V Parameter is set and Squeezelite is bound to hardware volume
+static void sendALSAVolumeCLI() {
+	int localvol = 0;	
+	
+	// Dirty Hack: at least on IQAudIO DAC subtract 8 to fit to the Alsa volume
+	localvol = get_changed_volume() - 8;
+	if(localvol > 0){
+		LOG_INFO("Update Squeezelite-Player Volume from Alsa-Volume");
+		sendCLICommandVolume(localvol, slimproto_ip);
+	}
+}
+#endif
+
+#if BLUETOOTHSYNC
+static void setPowerByBluetoothConnection() {		
+	int setpower = -1;			
+	
+	// Get Pulseaudio BT-Connection Status in Asynchronous way
+	
+  	// Run Shell Script to get Pulseaudio Connection Status for Bluetooth Speakers
+	char command[50];
+  	strcpy( command, "/opt/squeezelite/btcheck.sh" );
+	int btactive = system(command);
+   
+	LOG_DEBUG("Bluetooth Script Result: %d, Powerstatus: %d", btactive, powerstatus);
+  
+	if(btactive > 0 && powerstatus < 1){
+		LOG_DEBUG("Bluetooth Active and Player Power Off: Power ON now");
+		setpower = 1;
+		powerstatus = 1;
+	}else if (btactive == 0 && powerstatus > -1){
+		LOG_DEBUG("Bluetooth NOT Active and Player Power On: Power OFF now");
+		setpower = 0;
+		powerstatus = -1;
+	}
+	if (setpower > -1){
+		sendCLICommandPower(setpower, slimproto_ip);
+	}
+}	
+#endif 
+
 #if IR
 void sendIR(u32_t code, u32_t ts) {
 	struct IR_packet pkt;
@@ -270,6 +321,14 @@ static void process_strm(u8_t *pkt, int len) {
 	switch(strm->command) {
 	case 't':
 		sendSTAT("STMt", strm->replay_gain); // STMt replay_gain is no longer used to track latency, but support it
+#if ALSASYNC
+		if(alsasync)
+			sendALSAVolumeCLI();
+#endif
+#if BLUETOOTHSYNC
+		if(bluetoothsync)	
+			setPowerByBluetoothConnection();
+#endif
 		break;
 	case 'q':
 		decode_flush();
@@ -857,7 +916,9 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 		strncpy(player_name, name, PLAYER_NAME_LEN);
 		player_name[PLAYER_NAME_LEN] = '\0';
 	}
-
+#if CONTROLSBS
+	memcpy(pmac, mac, 6);
+#endif
 	if (namefile) {
 		FILE *fp;
 		name_file = namefile;
