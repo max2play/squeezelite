@@ -266,6 +266,10 @@ static void sendALSAVolumeCLI() {
 		sendCLICommandVolume(localvol, slimproto_ip);
 	}
 }
+
+void sendPlayPauseCLI(){   
+    sendCLICommandPlayPauseSwitch(slimproto_ip);
+}
 #endif
 
 #if BLUETOOTHSYNC
@@ -588,6 +592,10 @@ static void slimproto_run() {
 	int timeouts = 0;
 
 	set_readwake_handles(ehandles, sock, wake_e);
+ 
+#if GPIO    
+    initializeButton(loglevel);
+#endif // GPIO	
 
 	while (running && !new_server) {
 

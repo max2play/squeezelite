@@ -29,16 +29,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 int gpio_state = -1;
 int initialized = -1;
 int power_state = -1;
+static log_level loglevel;
 
 void relay( int state) {
     gpio_state = state;
 
   // Set up gpio  using BCM Pin #'s
   if (initialized == -1){
+	setenv("WIRINGPI_GPIOMEM", "1", 1);
 	wiringPiSetupGpio();
 	initialized = 1;
 	pinMode (gpio_pin, OUTPUT);
@@ -98,4 +101,48 @@ void relay_script( int state) {
 // Done!
 }
 
+
+static bool globalActive = false;
+struct timeval t1_light,t2;
+
+int showElapsedTime(void) {
+    static int seconds,useconds;
+    gettimeofday(&t2, NULL);
+    seconds  = t2.tv_sec  - t1_light.tv_sec;
+    useconds = t2.tv_usec - t1_light.tv_usec;
+    if(useconds < 0) {
+      useconds += 1000000;
+      seconds--;
+    }
+    LOG_DEBUG("Button start/end: %d sek %d msek\n",seconds,useconds/1000);
+    return seconds;
+}
+
+void interrupt_button(){   
+  int pin = digitalRead(gpio_button_pin);
+  if(pin == LOW && globalActive == false){
+    globalActive = true;
+    LOG_DEBUG("Button pressed");
+    gettimeofday(&t1_light, NULL);
+  }else if(pin == HIGH && globalActive == true){    
+    int seconds = showElapsedTime();
+    LOG_DEBUG("Button Released: %i seconds", seconds);
+    sendPlayPauseCLI();
+    globalActive = false;
+  }  
+}
+
+// Button to Pause / Play - add Interrupt that Starts / Pauses player on Button press
+void initializeButton(log_level _loglevel) {
+  loglevel = _loglevel;
+  if (initialized == -1){
+	setenv("WIRINGPI_GPIOMEM", "1", 1);
+	wiringPiSetupGpio();
+	initialized = 1;
+	pinMode (gpio_button_pin, INPUT);
+	digitalWrite(gpio_button_pin, 0);
+	LOG_DEBUG ("... Initialized GPIO Button ... ");
+  }  
+  wiringPiISR (gpio_button_pin, INT_EDGE_BOTH, &interrupt_button) ;
+}
 #endif // GPIO

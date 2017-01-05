@@ -127,6 +127,7 @@ static void usage(const char *argv0) {
 #endif
 #if CONTROLSBS
 		   "  -I <port>\t\t Squeezebox Server CLI Port (optional). Default 9090\n"
+		   "  -X <gpio_button>\t\t Use a GPIO Button to switch between Play and Pause - works well with rotary encoders with button for Volume and Play/Pause\n"
 #endif
 #if LINUX || FREEBSD || SUN
 		   "  -z \t\t\tDaemonize\n"
@@ -316,6 +317,7 @@ int main(int argc, char **argv) {
 #endif
 #if CONTROLSBS
 			  		   	  "I"
+			  		   	  "X"
 #endif
 /* 
  * only allow '-Z <rate>' override of maxSampleRate 
@@ -559,6 +561,9 @@ int main(int argc, char **argv) {
 #if CONTROLSBS
 		case 'I':
 			sbscliport = atoi(optarg);			
+			break;
+		case 'X':
+			gpio_button_pin = atoi(optarg);			
 			break;
 #endif
 #if BLUETOOTHSYNC

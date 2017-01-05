@@ -25,11 +25,12 @@
  *   -Syncing local ALSA-Volume changes to Squeezebox Server
  *   -Set Power-Status by Bluetooth Connection status
  *   -Added control_sbs.c for connection to CLI of Squeezebox Server
+ *   -Added GPIO Button to Play/Pause Player 
  */
 
 // make may define: PORTAUDIO, SELFPIPE, RESAMPLE, RESAMPLE_MP, VISEXPORT, GPIO, IR, DSD, LINKALL, CONTROLSBS, ALSASYNC, BLUETOOTHSYNC to influence build
 
-#define VERSION "v1.8.4-726"
+#define VERSION "Squeezelite Max2Play v1.0.1 based on v1.8.4-726"
 
 #if !defined(MODEL_NAME)
 #define MODEL_NAME SqueezeLite
@@ -633,6 +634,8 @@ u8_t pmac[6];
 int sbscliport;
 void sendCLICommandPower(int setpower, in_addr_t slimproto_ip);
 void sendCLICommandVolume(int localvol, in_addr_t slimproto_ip);
+void sendCLICommandPlayPauseSwitch(in_addr_t slimproto_ip);
+void sendPlayPauseCLI();
 #endif
 
 #if BLUETOOTHSYNC
@@ -710,6 +713,8 @@ struct codec *register_ff(const char *codec);
 #if GPIO
 void relay( int state);
 void relay_script(int state);
+void initializeButton(log_level loglevel);
+int gpio_button_pin;
 int gpio_pin;
 bool gpio_active_low;
 bool gpio_active;
