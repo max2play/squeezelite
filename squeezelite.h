@@ -30,7 +30,7 @@
 
 // make may define: PORTAUDIO, SELFPIPE, RESAMPLE, RESAMPLE_MP, VISEXPORT, GPIO, IR, DSD, LINKALL, CONTROLSBS, ALSASYNC, BLUETOOTHSYNC to influence build
 
-#define VERSION "Squeezelite Max2Play v1.0.1 based on v1.8.4-726"
+#define VERSION "Max2Play v1.0.1 based on v1.8.4-726"
 
 #if !defined(MODEL_NAME)
 #define MODEL_NAME SqueezeLite
