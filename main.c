@@ -21,7 +21,7 @@
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
  *
- * Additions (c) Stefan Rick (Max2Play), 2016 under the same license terms
+ * Additions (c) Stefan Rick (Max2Play), 2016-2017 under the same license terms
  *   -Syncing local ALSA-Volume changes to Squeezebox Server
  *   -Set Power-Status by Bluetooth Connection status
  *   -Added control_sbs.c for connection to CLI of Squeezebox Server
@@ -283,6 +283,10 @@ int main(int argc, char **argv) {
 #endif
 #if IR
 	char *lircrc = NULL;
+#endif
+
+#if CONTROLSBS
+	gpio_button_pin = 0;	
 #endif
 	
 	log_level log_output = lWARN;

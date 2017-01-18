@@ -134,6 +134,9 @@ void interrupt_button(){
 
 // Button to Pause / Play - add Interrupt that Starts / Pauses player on Button press
 void initializeButton(log_level _loglevel) {
+  if(gpio_button_pin == 0)
+     return;
+     
   loglevel = _loglevel;
   if (initialized == -1){
 	setenv("WIRINGPI_GPIOMEM", "1", 1);
