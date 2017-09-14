@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2016, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,7 +50,7 @@ extern struct codec *codec;
 
 // transfer all processed frames to the output buf
 static void _write_samples(void) {
-	size_t frames = process.out_frames;
+	frames_t frames = process.out_frames;
 	u32_t *iptr   = (u32_t *)process.outbuf;
 	unsigned cnt  = 10;
 

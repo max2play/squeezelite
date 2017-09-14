@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2016, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
  *  
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Additions (c) Paul Hermann, 2015-2016 under the same license terms
+ * Additions (c) Paul Hermann, 2015-2017 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
  *
@@ -31,7 +31,7 @@
 
 #include <signal.h>
 
-#define TITLE "Squeezelite " VERSION ", Copyright 2012-2015 Adrian Smith, 2015-2016 Ralph Irving."
+#define TITLE "Squeezelite " VERSION ", Copyright 2012-2015 Adrian Smith, 2015-2017 Ralph Irving."
 
 #define CODECS_BASE "flac,pcm,mp3,ogg,aac"
 #if FFMPEG
@@ -69,13 +69,14 @@ static void usage(const char *argv0) {
 		   "  -a <f>\t\tSpecify sample format (16|24|32) of output file when using -o - to output samples to stdout (interleaved little endian only)\n"
 		   "  -b <stream>:<output>\tSpecify internal Stream and Output buffer sizes in Kbytes\n"
 		   "  -c <codec1>,<codec2>\tRestrict codecs to those specified, otherwise load all available codecs; known codecs: " CODECS "\n"
+		   "  \t\t\tCodecs reported to LMS in order listed, allowing codec priority refinement.\n"
 		   "  -C <timeout>\t\tClose output device when idle after timeout seconds, default is to keep it open while player is 'on'\n"
 #if !IR
 		   "  -d <log>=<level>\tSet logging level, logs: all|slimproto|stream|decode|output, level: info|debug|sdebug\n"
 #else
 		   "  -d <log>=<level>\tSet logging level, logs: all|slimproto|stream|decode|output|ir, level: info|debug|sdebug\n"
 #endif
-#if GPIO
+#if defined(GPIO) && defined(RPI)
 		   "  -G <Rpi GPIO#>:<H/L>\tSpecify the BCM GPIO# to use for Amp Power Relay and if the output should be Active High or Low\n"
 #endif
 		   "  -e <codec1>,<codec2>\tExplicitly exclude native support of one or more codecs; known codecs: " CODECS "\n"
@@ -115,9 +116,11 @@ static void usage(const char *argv0) {
 		   "  -v \t\t\tVisualiser support\n"
 #endif
 # if ALSA
+		   "  -O <mixer device>\tSpecify mixer device, defaults to 'output device'\n"
 		   "  -L \t\t\tList volume controls for output device\n"
 		   "  -U <control>\t\tUnmute ALSA control and set to full volume (not supported with -V)\n"
 		   "  -V <control>\t\tUse ALSA control for volume adjustment, otherwise use software volume adjustment\n"
+		   "  -X \t\t\tUse linear volume adjustments instead of in terms of dB (only for hardware volume control)\n"
 #endif
 #if ALSASYNC
 		   "  -Q \t\t\tSync local ALSA volume changes with Squeezebox Server Volume when using -V option\n"
@@ -160,10 +163,9 @@ static void usage(const char *argv0) {
 		   " ALSA"
 #endif
 #if PORTAUDIO
-#if PA18API
-		   " PORTAUDIO18"
-#else
 		   " PORTAUDIO"
+#if PA18API
+		   "18"
 #endif
 #endif
 #if EVENTFD
@@ -200,6 +202,9 @@ static void usage(const char *argv0) {
 #if LINKALL
 		   " LINKALL"
 #endif
+#if STATUSHACK
+		   " STATUSHACK"
+#endif
 #if CONTROLSBS
 		   " CONTROLSBS"
 #endif
@@ -224,18 +229,28 @@ static void license(void) {
 		   "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
 		   "GNU General Public License for more details.\n\n"
 		   "You should have received a copy of the GNU General Public License\n"
-		   "along with this program.  If not, see <http://www.gnu.org/licenses/>.\n\n"
+		   "along with this program.  If not, see <http://www.gnu.org/licenses/>.\n"
 #if DSD		   
-		   "Contains dsd2pcm library Copyright 2009, 2011 Sebastian Gesemann which\n"
-		   "is subject to its own license.\n\n"
+		   "\nContains dsd2pcm library Copyright 2009, 2011 Sebastian Gesemann which\n"
+		   "is subject to its own license.\n"
 #endif
-		   "Option to allow server side upsampling for PCM streams (-W) from\n"
-		   "squeezelite-R2 (c) Marco Curti 2015, marcoc1712@gmail.com.\n\n"
+		   "\nOption to allow server side upsampling for PCM streams (-W) from\n"
+		   "squeezelite-R2 (c) Marco Curti 2015, marcoc1712@gmail.com.\n"
 #if GPIO
-		   "Additions (c) Paul Hermann, 2015, 2016 under the same license terms\n"
-		   "  -Control of Raspberry pi GPIO for amplifier power\n"
-			"  -Launch a script on power status change\n\n"
+		   "\nAdditions (c) Paul Hermann, 2015, 2017 under the same license terms\n"
+		   "- Launch a script on power status change\n"
+		   "- Control of Raspberry pi GPIO for amplifier power\n"
 #endif
+#if RPI
+		   "\nContains wiringpi GPIO Interface library Copyright (c) 2012-2017\n"
+		   "Gordon Henderson, which is subject to its own license.\n"
+#endif
+#if FFMPEG
+		   "\nThis software uses libraries from the FFmpeg project under\n"
+		   "the LGPLv2.1 and its source can be downloaded from\n"
+		   "<https://sourceforge.net/projects/lmsclients/files/source/>\n"
+#endif
+		   "\n"
 		   );
 }
 
@@ -271,8 +286,10 @@ int main(int argc, char **argv) {
 #endif
 #if ALSA
 	unsigned rt_priority = OUTPUT_RT_PRIORITY;
+	char *mixer_device = output_device;
 	char *output_mixer = NULL;
 	bool output_mixer_unmute = false;
+	bool linear_volume = false;
 #endif
 #if DSD
 	bool dop = false;
@@ -317,7 +334,7 @@ int main(int argc, char **argv) {
 		char *opt = argv[optind] + 1;
 		if (strstr("oabcCdefmMnNpPrs"
 #if ALSA
-				   "UV"
+				   "UVO"
 #endif
 #if CONTROLSBS
 			  		   	  "I"
@@ -335,7 +352,7 @@ int main(int argc, char **argv) {
 			optind += 2;
 		} else if (strstr("ltz?W"
 #if ALSA
-						  "L"
+						  "LX"
 #endif
 #if ALSASYNC
 			  		   	  "Q"
@@ -355,8 +372,11 @@ int main(int argc, char **argv) {
 #if IR
 						  "i"
 #endif
+#if defined(GPIO) && defined(RPI)
+						  "G"
+#endif
 #if GPIO
-						  "GS"
+						  "S"
 #endif
 
 						  , opt)) {
@@ -371,6 +391,9 @@ int main(int argc, char **argv) {
 		switch (opt[0]) {
 		case 'o':
 			output_device = optarg;
+#if ALSA
+			mixer_device = optarg;
+#endif
 			break;
 		case 'a':
 			output_params = optarg;
@@ -514,12 +537,6 @@ int main(int argc, char **argv) {
 			list_devices();
 			exit(0);
 			break;
-#if ALSA
-		case 'L':
-			list_mixers(output_device);
-			exit(0);
-			break;
-#endif
 #if RESAMPLE
 		case 'u':
 		case 'R':
@@ -547,6 +564,16 @@ int main(int argc, char **argv) {
 			break;
 #endif
 #if ALSA
+		case 'O':
+			mixer_device = optarg;
+			break;
+		case 'L':
+			list_mixers(mixer_device);
+			exit(0);
+			break;
+		//case 'X': MAX2PLAY CHANGE PARAMETER...
+		//	linear_volume = true;
+		//	break;
 		case 'U':
 			output_mixer_unmute = true;
 		case 'V':
@@ -584,7 +611,7 @@ int main(int argc, char **argv) {
 			}
 			break;
 #endif
-#if GPIO
+#if defined(GPIO) && defined(RPI)
 		case 'G':
 			if (power_script != NULL){
 				fprintf(stderr, "-G and -S options cannot be used together \n\n" );
@@ -611,12 +638,16 @@ int main(int argc, char **argv) {
 					exit(1);
 				}
 				gpio_active = true;
+				relay(0);
+
 			} else {
 				fprintf(stderr, "Error in GPIO Pin assignment.\n");
 				usage(argv[0]);
 				exit(1);
 			}
 			break;
+#endif
+#if GPIO
 		case 'S':
 			if (gpio_active){
 				fprintf(stderr, "-G and -S options cannot be used together \n\n" );
@@ -636,6 +667,7 @@ int main(int argc, char **argv) {
 				usage(argv[0]);
 				exit(1);
 			}
+			relay_script(0);
 			break;
 #endif
 #if LINUX || FREEBSD || SUN
@@ -729,8 +761,8 @@ int main(int argc, char **argv) {
 		output_init_stdout(log_output, output_buf_size, output_params, rates, rate_delay);
 	} else {
 #if ALSA
-		output_init_alsa(log_output, output_device, output_buf_size, output_params, rates, rate_delay, rt_priority, idle, output_mixer,
-						 output_mixer_unmute);
+		output_init_alsa(log_output, output_device, output_buf_size, output_params, rates, rate_delay, rt_priority, idle, mixer_device, output_mixer,
+						 output_mixer_unmute, linear_volume);
 #endif
 #if PORTAUDIO
 		output_init_pa(log_output, output_device, output_buf_size, output_params, rates, rate_delay, idle);

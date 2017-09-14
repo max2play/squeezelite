@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2016, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -167,7 +167,7 @@ static int _parse_packlen(void) {
 }
 
 static int _read_data(void *opaque, u8_t *buffer, int buf_size) {
-	size_t bytes;
+	unsigned int bytes;
 
 	LOCK_S;
 
@@ -311,7 +311,7 @@ static decode_state ff_decode(void) {
 		}
 
 		if (audio_stream == -1) {
-			int i;
+			unsigned int i;
 			for (i = 0; i < ff->formatC->nb_streams; ++i) {
 				if (ff->formatC->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
 					audio_stream = i;

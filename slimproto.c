@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2016, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
  *  
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Additions (c) Paul Hermann, 2015-2016 under the same license terms
+ * Additions (c) Paul Hermann, 2015-2017 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
  *
@@ -32,6 +32,8 @@
 #include "slimproto.h"
 
 static log_level loglevel;
+
+#define SQUEEZENETWORK "mysqueezebox.com:3483"
 
 #define PORT 3483
 
@@ -156,7 +158,9 @@ static void sendSTAT(const char *event, u32_t server_timestamp) {
 
 	if (status.current_sample_rate && status.frames_played && status.frames_played > status.device_frames) {
 		ms_played = (u32_t)(((u64_t)(status.frames_played - status.device_frames) * (u64_t)1000) / (u64_t)status.current_sample_rate);
+#ifndef STATUSHACK
 		if (now > status.updated) ms_played += (now - status.updated);
+#endif
 		LOG_SDEBUG("ms_played: %u (frames_played: %u device_frames: %u)", ms_played, status.frames_played, status.device_frames);
 	} else if (status.frames_played && now > status.stream_start) {
 		ms_played = now - status.stream_start;
@@ -325,14 +329,6 @@ static void process_strm(u8_t *pkt, int len) {
 	switch(strm->command) {
 	case 't':
 		sendSTAT("STMt", strm->replay_gain); // STMt replay_gain is no longer used to track latency, but support it
-#if ALSASYNC
-		if(alsasync)
-			sendALSAVolumeCLI();
-#endif
-#if BLUETOOTHSYNC
-		if(bluetoothsync)	
-			setPowerByBluetoothConnection();
-#endif
 		break;
 	case 'q':
 		decode_flush();
@@ -383,6 +379,9 @@ static void process_strm(u8_t *pkt, int len) {
 			LOCK_O;
 			output.state = jiffies ? OUTPUT_START_AT : OUTPUT_RUNNING;
 			output.start_at = jiffies;
+#ifdef STATUSHACK
+			status.frames_played = output.frames_played;
+#endif
 			UNLOCK_O;
 #if GPIO
 			ampidle = 0;
@@ -532,9 +531,16 @@ static void process_setd(u8_t *pkt, int len) {
 static void process_serv(u8_t *pkt, int len) {
 	struct serv_packet *serv = (struct serv_packet *)pkt;
 
-	LOG_INFO("switch server");
+	unsigned slimproto_port = 0;
+	char squeezeserver[] = SQUEEZENETWORK;
+	
+	if(pkt[4] == 0 && pkt[5] == 0 && pkt[6] == 0 && pkt[7] == 1) {
+		server_addr(squeezeserver, &new_server, &slimproto_port);
+	} else {
+		new_server = serv->server_ip;
+	}
 
-	new_server = serv->server_ip;
+	LOG_INFO("switch server");
 
 	if (len - sizeof(struct serv_packet) == 10) {
 		if (!new_server_cap) {
@@ -736,8 +742,9 @@ static void slimproto_run() {
 			UNLOCK_S;
 
 			LOCK_D;
-			if ((status.stream_state == STREAMING_HTTP || status.stream_state == STREAMING_FILE) && !sentSTMl
-				&& decode.state == DECODE_READY) {
+			if ((status.stream_state == STREAMING_HTTP || status.stream_state == STREAMING_FILE ||
+				(status.stream_state == DISCONNECT && stream.disconnect == DISCONNECT_OK)) &&
+				!sentSTMl && decode.state == DECODE_READY) {
 				if (autostart == 0) {
 					decode.state = DECODE_RUNNING;
 					_sendSTMl = true;
@@ -771,6 +778,9 @@ static void slimproto_run() {
 				_sendSTMs = true;
 				output.track_started = false;
 				status.stream_start = output.track_start_time;
+#ifdef STATUSHACK 
+				status.frames_played = output.frames_played;
+#endif
 			}
 #if PORTAUDIO
 			if (output.pa_reopen) {
@@ -839,6 +849,16 @@ static void slimproto_run() {
 #if IR
 			if (_sendIR)   sendIR(ir_code, ir_ts);
 #endif
+
+#if ALSASYNC
+			if(alsasync){
+				sendALSAVolumeCLI();
+			}
+#endif
+#if BLUETOOTHSYNC
+			if(bluetoothsync)
+				setPowerByBluetoothConnection();
+#endif
 		}
 	}
 }
@@ -848,11 +868,12 @@ void wake_controller(void) {
 	wake_signal(wake_e);
 }
 
-in_addr_t discover_server(void) {
+in_addr_t discover_server(char *default_server) {
 	struct sockaddr_in d;
 	struct sockaddr_in s;
 	char *buf;
 	struct pollfd pollinfo;
+	unsigned port;
 
 	int disc_sock = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -885,6 +906,10 @@ in_addr_t discover_server(void) {
 			LOG_INFO("got response from: %s:%d", inet_ntoa(s.sin_addr), ntohs(s.sin_port));
 		}
 
+		if (default_server) {
+			server_addr(default_server, &s.sin_addr.s_addr, &port);
+		}
+
 	} while (s.sin_addr.s_addr == 0 && running);
 
 	closesocket(disc_sock);
@@ -901,7 +926,10 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 	bool reconnect = false;
 	unsigned failed_connect = 0;
 	unsigned slimproto_port = 0;
+	in_addr_t previous_server = 0;
 	int i;
+
+	memset(&status, 0, sizeof(status));
 
 	wake_create(wake_e);
 
@@ -913,7 +941,7 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 	}
 
 	if (!slimproto_ip) {
-		slimproto_ip = discover_server();
+		slimproto_ip = discover_server(server);
 	}
 
 	if (!slimproto_port) {
@@ -972,6 +1000,7 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 	while (running) {
 
 		if (new_server) {
+			previous_server = slimproto_ip;
 			slimproto_ip = serv_addr.sin_addr.s_addr = new_server;
 			LOG_INFO("switching server to %s:%d", inet_ntoa(serv_addr.sin_addr), ntohs(serv_addr.sin_port));
 			new_server = 0;
@@ -985,12 +1014,17 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 
 		if (connect_timeout(sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr), 5) != 0) {
 
-			LOG_INFO("unable to connect to server %u", failed_connect);
-			sleep(5);
+			if (previous_server) {
+				slimproto_ip = serv_addr.sin_addr.s_addr = previous_server;
+				LOG_INFO("new server not reachable, reverting to previous server %s:%d", inet_ntoa(serv_addr.sin_addr), ntohs(serv_addr.sin_port));
+			} else {
+				LOG_INFO("unable to connect to server %u", failed_connect);
+				sleep(5);
+			}
 
 			// rediscover server if it was not set at startup
 			if (!server && ++failed_connect > 5) {
-				slimproto_ip = serv_addr.sin_addr.s_addr = discover_server();
+				slimproto_ip = serv_addr.sin_addr.s_addr = discover_server(NULL);
 			}
 
 		} else {
@@ -1030,6 +1064,8 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 
 			usleep(100000);
 		}
+
+		previous_server = 0;
 
 		closesocket(sock);
 	}

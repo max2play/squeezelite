@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2016, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -106,9 +106,14 @@ static void _check_header(void) {
 			if (format == WAVE && !memcmp(ptr, "data", 4)) {
 				ptr += 8;
 				_buf_inc_readp(streambuf, ptr - streambuf->readp);
-				audio_left = len;
-				LOG_INFO("audio size: %u", audio_left);
-				limit = true;
+				
+				// Reading from an upsampled stream, length could be wrong.
+				// Only use length in header for files.
+				if (stream.state == STREAMING_FILE) {
+					audio_left = len;
+					LOG_INFO("audio size: %u", audio_left);
+					limit = true;
+				}
 				return;
 			}
 
@@ -117,9 +122,14 @@ static void _check_header(void) {
 				// following 4 bytes is blocksize - ignored
 				ptr += 8 + 8;
 				_buf_inc_readp(streambuf, ptr + offset - streambuf->readp);
-				audio_left = len - 8 - offset;
-				LOG_INFO("audio size: %u", audio_left);
-				limit = true;
+				
+				// Reading from an upsampled stream, length could be wrong.
+				// Only use length in header for files.
+				if (stream.state == STREAMING_FILE) {
+					audio_left = len - 8 - offset;
+					LOG_INFO("audio size: %u", audio_left);
+					limit = true;
+				}
 				return;
 			}
 

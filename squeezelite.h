@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Additions (c) Paul Hermann, 2015-2016 under the same license terms
+ * Additions (c) Paul Hermann, 2015-2017 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
  *
@@ -30,7 +30,7 @@
 
 // make may define: PORTAUDIO, SELFPIPE, RESAMPLE, RESAMPLE_MP, VISEXPORT, GPIO, IR, DSD, LINKALL, CONTROLSBS, ALSASYNC, BLUETOOTHSYNC to influence build
 
-#define VERSION "Max2Play v1.0.2 based on v1.8.4-726"
+#define VERSION "Max2Play v1.0.3 based on v1.8.7-999"
 
 #if !defined(MODEL_NAME)
 #define MODEL_NAME SqueezeLite
@@ -649,8 +649,7 @@ void list_devices(void);
 void list_mixers(const char *output_device);
 void set_volume(unsigned left, unsigned right);
 bool test_open(const char *device, unsigned rates[]);
-void output_init_alsa(log_level level, const char *device, unsigned output_buf_size, char *params, unsigned rates[], 
-					  unsigned rate_delay, unsigned rt_priority, unsigned idle, char *volume_mixer, bool mixer_unmute);
+void output_init_alsa(log_level level, const char *device, unsigned output_buf_size, char *params, unsigned rates[], unsigned rate_delay, unsigned rt_priority, unsigned idle, char *mixer_device, char *volume_mixer, bool mixer_unmute, bool mixer_linear);
 void output_close_alsa(void);
 #if ALSASYNC
 bool alsasync;

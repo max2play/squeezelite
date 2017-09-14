@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2016, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -152,7 +152,7 @@ frames_t _output_frames(frames_t avail) {
 				IF_DSD(
 				   output.dop = output.next_dop;
 				)
-				if (!(output.fade == FADE_ACTIVE) || !(output.fade_mode == FADE_CROSSFADE)) {
+				if (!output.fade == FADE_ACTIVE || !output.fade_mode == FADE_CROSSFADE) {
 					output.current_replay_gain = output.next_replay_gain;
 				}
 				output.track_start = NULL;
